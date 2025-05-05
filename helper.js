@@ -1,5 +1,3 @@
-// helper.js
-
 function createRay(origin, direction) {
   return { origin, direction };
 }

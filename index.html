@@ -1,193 +1,155 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Demo Raytrace Bola Dasar</title>
+    <title>Raytracer Fullscreen</title>
     <style>
+      html,
       body {
         margin: 0;
+        padding: 0;
         overflow: hidden;
-        background-color: #222;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
+        height: 100%;
+        background: #000;
       }
       canvas {
-        border: 1px solid #555;
-        background-color: #000;
+        display: block;
       }
     </style>
   </head>
   <body>
-    <canvas id="raytraceCanvas" width="500" height="500"></canvas>
+    <canvas id="raytraceCanvas"></canvas>
 
-    <!-- 1. Include gl-matrix (pastikan URL ini valid saat Anda gunakan) -->
-    <!-- Anda bisa mengunduh gl-matrix.js atau menggunakan CDN -->
-    <script
-      src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/3.4.3/gl-matrix-min.js"
-      integrity="sha512-KrNIh8CS/GtDNglkSLHjAoXOEREJ5Wy1SqqC1BPut6/pBNB9jOU3ATZRUL29YY1W1M7S+vOG7PU+OPG2gL7j/g=="
-      crossorigin="anonymous"
-      referrerpolicy="no-referrer"
-    ></script>
-
-    <!-- 2. Skrip Raytracing Utama -->
     <script>
-      // --- Setup Awal ---
+      // --- Vector Helper Functions ---
+      function createVector(x = 0, y = 0, z = 0) {
+        return { x, y, z };
+      }
+      function subtract(v1, v2) {
+        return { x: v1.x - v2.x, y: v1.y - v2.y, z: v1.z - v2.z };
+      }
+      function add(v1, v2) {
+        return { x: v1.x + v2.x, y: v1.y + v2.y, z: v1.z + v2.z };
+      }
+      function scale(v, s) {
+        return { x: v.x * s, y: v.y * s, z: v.z * s };
+      }
+      function dot(v1, v2) {
+        return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+      }
+      function length(v) {
+        return Math.sqrt(dot(v, v));
+      }
+      function normalize(v) {
+        const len = length(v);
+        return len > 0 ? scale(v, 1 / len) : createVector();
+      }
+    </script>
+
+    <script>
       const canvas = document.getElementById("raytraceCanvas");
       const ctx = canvas.getContext("2d");
-      const width = canvas.width;
-      const height = canvas.height;
-      const imageData = ctx.createImageData(width, height);
-      const pixels = imageData.data; // Array [r,g,b,a, r,g,b,a, ...]
 
-      // Akses mudah ke fungsi gl-matrix (opsional, tapi memudahkan)
-      const { vec3 } = glMatrix; // Kita hanya butuh vektor 3D untuk demo ini
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
 
-      // --- Helper Functions (seolah-olah dari helper.js) ---
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        render();
+      });
 
-      /**
-       * Menghitung perpotongan sinar (ray) dengan bola (sphere).
-       * @param {vec3} rayOrigin - Titik asal sinar.
-       * @param {vec3} rayDirection - Vektor arah sinar (diasumsikan ternormalisasi).
-       * @param {vec3} sphereCenter - Titik pusat bola.
-       * @param {number} sphereRadius - Radius bola.
-       * @returns {number|null} Jarak (t) ke titik potong terdekat jika ada, atau null jika tidak ada perpotongan.
-       */
-      function intersectSphere(
-        rayOrigin,
-        rayDirection,
-        sphereCenter,
-        sphereRadius
-      ) {
-        const oc = vec3.subtract(vec3.create(), rayOrigin, sphereCenter); // Vektor dari pusat bola ke asal sinar
-        const a = vec3.dot(rayDirection, rayDirection); // Harus 1 jika rayDirection dinormalisasi
-        const b = 2.0 * vec3.dot(oc, rayDirection);
-        const c = vec3.dot(oc, oc) - sphereRadius * sphereRadius;
-        const discriminant = b * b - 4 * a * c;
+      resizeCanvas();
 
-        if (discriminant < 0) {
-          return null; // Tidak ada perpotongan nyata
-        } else {
-          // Hitung dua solusi t potensial
-          const sqrtDiscriminant = Math.sqrt(discriminant);
-          const t1 = (-b - sqrtDiscriminant) / (2.0 * a);
-          const t2 = (-b + sqrtDiscriminant) / (2.0 * a);
+      const camera = {
+        origin: createVector(0, 0, 1), // z=1 looking into z=0
+      };
 
-          // Kita ingin perpotongan terdekat yang ada di depan kamera (t > 0)
-          // Gunakan epsilon kecil untuk menghindari masalah presisi floating point
-          const epsilon = 0.0001;
-          if (t1 > epsilon) {
-            return t1; // t1 adalah yang terdekat dan positif
-          } else if (t2 > epsilon) {
-            return t2; // t2 adalah yang terdekat dan positif
-          } else {
-            return null; // Kedua perpotongan berada di belakang atau tepat di asal sinar
-          }
+      const sceneObjects = [
+        {
+          type: "sphere",
+          center: createVector(-0.6, 0, 0),
+          radius: 0.2,
+          color: "red",
+        },
+        {
+          type: "sphere",
+          center: createVector(0.6, 0, 0),
+          radius: 0.2,
+          color: "blue",
+        },
+      ];
+
+      function intersectSphere(origin, direction, sphere) {
+        const L = subtract(origin, sphere.center);
+        const a = dot(direction, direction);
+        const b = 2 * dot(L, direction);
+        const c = dot(L, L) - sphere.radius * sphere.radius;
+        const d = b * b - 4 * a * c;
+
+        if (d < 0) return Infinity;
+
+        const sqrtD = Math.sqrt(d);
+        const t0 = (-b - sqrtD) / (2 * a);
+        const t1 = (-b + sqrtD) / (2 * a);
+        const t = Math.min(t0, t1);
+
+        return t > 0 ? t : Infinity;
+      }
+
+      function getColor(name) {
+        switch (name.toLowerCase()) {
+          case "red":
+            return [255, 0, 0];
+          case "blue":
+            return [0, 0, 255];
+          default:
+            return [128, 128, 128];
         }
       }
 
-      /**
-       * Menetapkan warna pixel dalam array ImageData.
-       * @param {number} x - Koordinat x pixel.
-       * @param {number} y - Koordinat y pixel.
-       * @param {number[]} color - Array warna [r, g, b] (0-255).
-       */
-      function setPixel(x, y, color) {
-        const index = (y * width + x) * 4; // Setiap pixel punya 4 komponen (r, g, b, a)
-        pixels[index + 0] = color[0]; // R
-        pixels[index + 1] = color[1]; // G
-        pixels[index + 2] = color[2]; // B
-        pixels[index + 3] = 255; // A (Alpha = 255, opaque)
-      }
-
-      // --- Definisi Scene ---
-      const camera = {
-        origin: vec3.fromValues(0, 0, -2), // Posisi kamera sedikit di belakang sumbu Z
-        // Bidang pandang (viewport) akan kita definisikan saat kalkulasi ray
-      };
-
-      const sphere = {
-        center: vec3.fromValues(0, 0, 3), // Posisi bola di depan kamera (sumbu Z positif)
-        radius: 1.0,
-        color: [255, 100, 100], // Warna merah muda
-      };
-
-      const backgroundColor = [50, 50, 80]; // Warna latar belakang biru keunguan gelap
-
-      // --- Proses Raytracing ---
       function render() {
-        console.log("Memulai rendering...");
-        const startTime = performance.now();
+        const width = canvas.width;
+        const height = canvas.height;
+        const imageData = ctx.createImageData(width, height);
+        const data = imageData.data;
 
-        // Iterasi setiap pixel di canvas
+        const aspectRatio = width / height;
+        const viewportSize = 2; // Simetris, membuat bola tetap bulat
+
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
-            // 1. Hitung arah sinar (ray direction) untuk pixel (x, y)
-            // Konversi koordinat pixel (0..width-1, 0..height-1) ke
-            // koordinat viewport (-1..1, 1..-1) (Y terbalik karena canvas Y ke bawah)
-            // Asumsikan viewport berada di z=0
-            const viewportX = ((x + 0.5) / width) * 2.0 - 1.0; // +0.5 untuk pusat pixel
-            const viewportY = 1.0 - ((y + 0.5) / height) * 2.0; // Y dibalik
-            // Aspect ratio untuk canvas non-persegi (di sini 1 karena 500x500)
-            const aspectRatio = width / height;
+            const u = (x + 0.5) / width;
+            const v = (y + 0.5) / height;
+            const px = (u - 0.5) * viewportSize;
+            const py = (0.5 - v) * viewportSize;
+            const direction = normalize(createVector(px * aspectRatio, py, -1));
 
-            // Titik tujuan sinar pada bidang viewport
-            const rayTarget = vec3.fromValues(
-              viewportX * aspectRatio,
-              viewportY,
-              0
-            );
+            let closestT = Infinity;
+            let hitColor = [0, 0, 0];
 
-            // Vektor arah dari kamera ke titik target di viewport
-            const rayDirection = vec3.subtract(
-              vec3.create(),
-              rayTarget,
-              camera.origin
-            );
-            vec3.normalize(rayDirection, rayDirection); // Normalisasi vektor arah
-
-            // 2. Lakukan tes perpotongan sinar dengan bola
-            const intersectionT = intersectSphere(
-              camera.origin,
-              rayDirection,
-              sphere.center,
-              sphere.radius
-            );
-
-            // 3. Tentukan warna pixel
-            if (intersectionT !== null) {
-              // Ada perpotongan, gunakan warna bola
-              setPixel(x, y, sphere.color);
-            } else {
-              // Tidak ada perpotongan, gunakan warna latar
-              setPixel(x, y, backgroundColor);
+            for (const obj of sceneObjects) {
+              const t = intersectSphere(camera.origin, direction, obj);
+              if (t < closestT) {
+                closestT = t;
+                hitColor = getColor(obj.color);
+              }
             }
+
+            const idx = (y * width + x) * 4;
+            data[idx] = hitColor[0];
+            data[idx + 1] = hitColor[1];
+            data[idx + 2] = hitColor[2];
+            data[idx + 3] = 255;
           }
         }
 
-        // 4. Tampilkan hasil ke canvas
         ctx.putImageData(imageData, 0, 0);
-
-        const endTime = performance.now();
-        console.log(
-          `Rendering selesai dalam ${(endTime - startTime).toFixed(2)} ms`
-        );
       }
 
-      // --- Jalankan Rendering ---
-      // Tunggu gl-matrix siap (meskipun biasanya cepat dari CDN)
-      // Cara sederhana: panggil render langsung. Untuk kasus lebih kompleks,
-      // Anda mungkin ingin memastikan library sudah load.
-      if (typeof glMatrix !== "undefined") {
-        render();
-      } else {
-        console.error("gl-matrix tidak dapat dimuat!");
-        alert(
-          "Error: Library gl-matrix tidak ditemukan. Periksa koneksi internet atau URL script."
-        );
-      }
+      render();
     </script>
   </body>
 </html>
