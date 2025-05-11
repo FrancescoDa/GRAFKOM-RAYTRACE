@@ -1,25 +1,34 @@
-function createRay(origin, direction) {
-  return { origin, direction };
+/* helper.js
+   Fungsi-fungsi dasar untuk perhitungan vektor dan matrix.
+   Meskipun dalam demo ini kita sudah menggunakan gl-matrix,
+   file ini bisa digunakan untuk fungsi tambahan atau pembungkus
+   operasi vektor/matriks sesuai kebutuhan.
+*/
+
+// Contoh fungsi membuat vektor 3D
+function createVec3(x, y, z) {
+  return [x, y, z];
 }
 
-function intersectSphere(ray, sphere) {
-  const L = vec3.create();
-  vec3.subtract(L, sphere.center, ray.origin);
-
-  const tca = vec3.dot(L, ray.direction);
-  const d2 = vec3.dot(L, L) - tca * tca;
-  const r2 = sphere.radius * sphere.radius;
-
-  if (d2 > r2) return null;
-
-  const thc = Math.sqrt(r2 - d2);
-  const t0 = tca - thc;
-  const t1 = tca + thc;
-
-  if (t1 < 0) return null;
-
-  const t = t0 < 0 ? t1 : t0;
-  const hitPoint = vec3.create();
-  vec3.scaleAndAdd(hitPoint, ray.origin, ray.direction, t);
-  return hitPoint;
+// Fungsi penjumlahan dua vektor
+function addVec3(a, b) {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
+
+// Fungsi perkalian vektor dengan skalar
+function scaleVec3(v, s) {
+  return [v[0] * s, v[1] * s, v[2] * s];
+}
+
+// Fungsi dot product dari dua vektor
+function dotVec3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+// Ekspos fungsi jika diperlukan di global scope
+window.helper = {
+  createVec3: createVec3,
+  addVec3: addVec3,
+  scaleVec3: scaleVec3,
+  dotVec3: dotVec3,
+};

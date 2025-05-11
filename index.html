@@ -1,155 +1,113 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Raytracer Fullscreen</title>
+    <title>Raytracing Demo Dasar</title>
+
     <style>
-      html,
       body {
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-        height: 100%;
-        background: #000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh; /* Tinggi penuh viewport */
+        margin: 0; /* Hilangkan margin default */
+        background-color: #f0f0f0; /* Warna latar belakang opsional */
       }
       canvas {
-        display: block;
+        border: 1px solid #000; /* Opsional: Tambahkan border untuk visualisasi */
       }
     </style>
   </head>
   <body>
-    <canvas id="raytraceCanvas"></canvas>
+    <canvas id="canvas" width="500" height="500"></canvas>
 
+    <!-- Sertakan gl-matrix dari CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <!-- Sertakan file helper.js -->
+    <script src="helper.js"></script>
     <script>
-      // --- Vector Helper Functions ---
-      function createVector(x = 0, y = 0, z = 0) {
-        return { x, y, z };
-      }
-      function subtract(v1, v2) {
-        return { x: v1.x - v2.x, y: v1.y - v2.y, z: v1.z - v2.z };
-      }
-      function add(v1, v2) {
-        return { x: v1.x + v2.x, y: v1.y + v2.y, z: v1.z + v2.z };
-      }
-      function scale(v, s) {
-        return { x: v.x * s, y: v.y * s, z: v.z * s };
-      }
-      function dot(v1, v2) {
-        return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-      }
-      function length(v) {
-        return Math.sqrt(dot(v, v));
-      }
-      function normalize(v) {
-        const len = length(v);
-        return len > 0 ? scale(v, 1 / len) : createVector();
-      }
-    </script>
-
-    <script>
-      const canvas = document.getElementById("raytraceCanvas");
-      const ctx = canvas.getContext("2d");
-
-      function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-      }
-
-      window.addEventListener("resize", () => {
-        resizeCanvas();
-        render();
-      });
-
-      resizeCanvas();
-
-      const camera = {
-        origin: createVector(0, 0, 1), // z=1 looking into z=0
-      };
-
-      const sceneObjects = [
-        {
-          type: "sphere",
-          center: createVector(-0.6, 0, 0),
-          radius: 0.2,
-          color: "red",
-        },
-        {
-          type: "sphere",
-          center: createVector(0.6, 0, 0),
-          radius: 0.2,
-          color: "blue",
-        },
-      ];
-
-      function intersectSphere(origin, direction, sphere) {
-        const L = subtract(origin, sphere.center);
-        const a = dot(direction, direction);
-        const b = 2 * dot(L, direction);
-        const c = dot(L, L) - sphere.radius * sphere.radius;
-        const d = b * b - 4 * a * c;
-
-        if (d < 0) return Infinity;
-
-        const sqrtD = Math.sqrt(d);
-        const t0 = (-b - sqrtD) / (2 * a);
-        const t1 = (-b + sqrtD) / (2 * a);
-        const t = Math.min(t0, t1);
-
-        return t > 0 ? t : Infinity;
-      }
-
-      function getColor(name) {
-        switch (name.toLowerCase()) {
-          case "red":
-            return [255, 0, 0];
-          case "blue":
-            return [0, 0, 255];
-          default:
-            return [128, 128, 128];
-        }
-      }
-
-      function render() {
+      (function () {
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
         const width = canvas.width;
         const height = canvas.height;
-        const imageData = ctx.createImageData(width, height);
-        const data = imageData.data;
 
-        const aspectRatio = width / height;
-        const viewportSize = 2; // Simetris, membuat bola tetap bulat
+        // Definisi scene dengan satu sphere, siap untuk multiple object
+        const spheres = [
+          {
+            center: vec3.fromValues(0, 0, -5),
+            radius: 1,
+            color: [255, 0, 0], // Bola utama - Merah
+          },
+          {
+            center: vec3.fromValues(-1.5, 0.5, -4),
+            radius: 0.5,
+            color: [0, 255, 0], // Bola pembanding kiri atas - Hijau
+          },
+          {
+            center: vec3.fromValues(1.2, -0.5, -6),
+            radius: 0.8,
+            color: [0, 128, 255], // Bola pembanding kanan bawah - Biru
+          },
+        ];
 
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const u = (x + 0.5) / width;
-            const v = (y + 0.5) / height;
-            const px = (u - 0.5) * viewportSize;
-            const py = (0.5 - v) * viewportSize;
-            const direction = normalize(createVector(px * aspectRatio, py, -1));
+        // Posisi kamera di origin
+        const origin = vec3.fromValues(0, 0, 0);
 
-            let closestT = Infinity;
-            let hitColor = [0, 0, 0];
+        // Buat image data untuk canvas
+        let imageData = ctx.createImageData(width, height);
 
-            for (const obj of sceneObjects) {
-              const t = intersectSphere(camera.origin, direction, obj);
-              if (t < closestT) {
-                closestT = t;
-                hitColor = getColor(obj.color);
+        // Fungsi untuk memeriksa intersection antara ray dan sphere
+        function intersectSphere(origin, dir, sphere) {
+          let oc = vec3.create();
+          vec3.subtract(oc, origin, sphere.center);
+          let a = vec3.dot(dir, dir);
+          let b = 2.0 * vec3.dot(oc, dir);
+          let c = vec3.dot(oc, oc) - sphere.radius * sphere.radius;
+          let discriminant = b * b - 4 * a * c;
+          return discriminant >= 0;
+        }
+
+        // Render tiap piksel: hitung ray dari kamera melalui tiap pixel ke dalam ruang image plane
+        for (let j = 0; j < height; j++) {
+          for (let i = 0; i < width; i++) {
+            // Koordinat layar dalam rentang [-1, 1]
+            let u = ((i + 0.5) / width) * 2 - 1;
+            let v = 1 - ((j + 0.5) / height) * 2; // inverting y agar atas = +1
+
+            // Dengan FOV 90° anggap image plane ada di z = -1
+            let dir = vec3.fromValues(u, v, -1);
+            vec3.normalize(dir, dir);
+
+            // Warna default: hitam
+            let pixelColor = [0, 0, 0, 255];
+
+            // Periksa intersection dengan setiap sphere
+            for (let k = 0; k < spheres.length; k++) {
+              if (intersectSphere(origin, dir, spheres[k])) {
+                // Jika mengenai sphere, warnai sesuai warna sphere (merah)
+                pixelColor = [
+                  spheres[k].color[0],
+                  spheres[k].color[1],
+                  spheres[k].color[2],
+                  255,
+                ];
+                break;
               }
             }
 
-            const idx = (y * width + x) * 4;
-            data[idx] = hitColor[0];
-            data[idx + 1] = hitColor[1];
-            data[idx + 2] = hitColor[2];
-            data[idx + 3] = 255;
+            // Set piksel pada imageData
+            let index = (j * width + i) * 4;
+            imageData.data[index + 0] = pixelColor[0];
+            imageData.data[index + 1] = pixelColor[1];
+            imageData.data[index + 2] = pixelColor[2];
+            imageData.data[index + 3] = pixelColor[3];
           }
         }
 
+        // Gambar hasil ke canvas
         ctx.putImageData(imageData, 0, 0);
-      }
-
-      render();
+      })();
     </script>
   </body>
 </html>
